@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use vale_core::types::BacktestResult;
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SweepResult {
     pub params: HashMap<String, f64>,
     pub result: BacktestResult,

@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/Lucent-sh/vale.sh/main/scripts/inst
 Override install location:
 
 ```bash
-VALE_INSTALL_DIR=~/.local/bin VALE_VERSION=v0.0.1 ./scripts/install.sh
+VALE_INSTALL_DIR=~/.local/bin VALE_VERSION=v1.0.0 ./scripts/install.sh
 ```
 
 ### Build from source
@@ -97,6 +97,16 @@ vale price option \
   --spot 100 --strike 100 \
   --expiry 90d --vol 0.20 --rate 0.05
 
+# Parameter sweep with checkpoint resume + live TUI
+vale sweep run --ticker SPY --start 2020-01-01 --end 2024-01-01 \
+  --strategy sma_crossover --checkpoint ~/.vale/sweep.ckpt
+
+# Export bars to Parquet (Polars)
+vale data export --ticker SPY --from 2020-01-01 --format parquet --out spy.parquet
+
+# Shell completions (bash/zsh/fish)
+vale completions bash > ~/.local/share/bash-completion/completions/vale
+
 # JSON everywhere
 vale --output json doctor | jq .
 ```
@@ -107,18 +117,19 @@ vale --output json doctor | jq .
 |---------|-------------|
 | `vale doctor` | Integration and config health check |
 | `vale config` | `init`, `show`, `get`, `set`, `edit` |
-| `vale data` | `fetch`, `inspect`, `export`, `sources` |
-| `vale backtest` | `run`, `compare`, `validate` |
-| `vale sweep` | Parameter grid search with live TUI |
-| `vale portfolio` | `optimize`, `backtest`, `efficient-frontier` |
+| `vale data` | `fetch`, `inspect`, `export` (CSV/Parquet), `sources` (Yahoo, Polygon, Alpaca, local) |
+| `vale backtest` | `run`, `compare`, `validate` (native, lean, vectorbt) |
+| `vale sweep` | Grid search, Rayon parallel, `--checkpoint` resume, live TUI |
+| `vale portfolio` | `optimize`, `backtest`, `efficient-frontier`, Black–Litterman |
 | `vale risk` | `metrics`, `stress`, `correlation` |
 | `vale price` | `option`, `bond`, `greeks` |
-| `vale factor` | `analyze`, `ic` |
-| `vale report` | `tearsheet`, `show` |
+| `vale factor` | `analyze`, `ic` (FF3/FF5/Carhart4 via `--model`) |
+| `vale report` | `tearsheet` (`--open`), `trades`, `show` |
 | `vale strategy` | `scaffold`, `validate`, `list` |
-| `vale watch` | Read-only paper/live monitor (Ratatui) |
+| `vale watch` | Read-only monitor (Alpaca when keyed; explicit demo mode) |
+| `vale completions` | bash, zsh, fish, elvish, powershell |
 
-Global flags: `-o table|json|csv`, `--no-color`, `-v`.
+Global flags: `-o table|json|csv`, `--no-color`, `-v`. Running `vale` with no subcommand prints help (exit 0).
 
 Built-in native strategies: `buy_and_hold`, `sma_crossover`.
 
@@ -153,7 +164,7 @@ flowchart TB
 crates/
   vale-cli/          # Binary, theme, Ratatui dashboards
   vale-core/         # Types, config, cache, errors
-  vale-data/         # Yahoo, Polygon, CSV, cache layer
+  vale-data/         # Yahoo, Polygon, Alpaca, Polars export, cache
   vale-backtest/     # Event-driven engine + strategies
   vale-sweep/        # Grid + Rayon runner
   vale-risk/         # Metrics, drawdown, stress
@@ -163,7 +174,7 @@ crates/
   vale-factor/       # Fama–French, OLS, IC
   vale-report/       # Tables, charts, HTML
   vale-watch/        # Broker + watch TUI
-  vale-adapters/     # LEAN, doctor, optional engines
+  vale-adapters/     # LEAN, VectorBT, OpenBB, QuantLib, optional PyO3
 ```
 
 ## Configuration
@@ -192,11 +203,11 @@ cargo test --workspace
 cargo build --release -p vale-cli
 ```
 
-See **[ROADMAP.md](./ROADMAP.md)** for unimplemented features, known bugs, and the exact continuation checklist for contributors and agents.
+See **[ROADMAP.md](./ROADMAP.md)** for release history and the v1.0.0 completion checklist.
 
 ## Versioning
 
-Current release line: **v0.0.1** (alpha). Semver tags `v*` trigger [release builds](.github/workflows/release.yml).
+Current release line: **v1.0.0**. Semver tags `v*` (or a `Cargo.toml` version bump on `main`) trigger [release builds](.github/workflows/release.yml).
 
 ## License
 

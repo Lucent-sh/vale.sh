@@ -1,6 +1,6 @@
 [package]
 name = "vale-backtest"
-version = "0.0.2"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
@@ -13,4 +13,9 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 
+[[bench]]
+name = "backtest_bench"
+harness = false
+
 [dev-dependencies]
+criterion = "0.5"

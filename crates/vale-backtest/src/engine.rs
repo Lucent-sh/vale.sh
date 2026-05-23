@@ -68,21 +68,33 @@ impl BacktestEngine {
                 if order.status == OrderStatus::Cancelled {
                     continue;
                 }
-                let fill_price = match order.order_type {
-                    OrderType::Market => {
-                        self.slippage.apply(bar.close, order.quantity, order.is_buy)
-                    }
+                let (fill_qty, raw_price) = match order.order_type {
+                    OrderType::Market => (order.quantity, bar.close),
                     OrderType::Limit { price } => {
-                        self.slippage.apply(price, order.quantity, order.is_buy)
+                        let touched = if order.is_buy {
+                            bar.low <= price
+                        } else {
+                            bar.high >= price
+                        };
+                        if !touched {
+                            continue;
+                        }
+                        let liquidity = 0.25;
+                        let qty = order.quantity * liquidity;
+                        if qty <= 0.0 {
+                            continue;
+                        }
+                        (qty, price)
                     }
                 };
-                let commission = self.commission.calculate(order.quantity, fill_price);
+                let fill_price = self.slippage.apply(raw_price, fill_qty, order.is_buy);
+                let commission = self.commission.calculate(fill_qty, fill_price);
                 Self::apply_fill(
                     &mut portfolio,
                     &mut open_entries,
                     Fill {
                         symbol: order.symbol.clone(),
-                        quantity: order.quantity,
+                        quantity: fill_qty,
                         price: fill_price,
                         commission,
                         is_buy: order.is_buy,

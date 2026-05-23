@@ -2,6 +2,7 @@ use crate::cli::FactorCommand;
 use crate::theme;
 use anyhow::Result;
 use vale_core::types::OutputFormat;
+use vale_factor::fama_french;
 use vale_factor::ic::information_coefficient;
 use vale_factor::regression::ols;
 use vale_report::json::FactorReportJson;
@@ -10,15 +11,14 @@ pub async fn handle(cmd: FactorCommand, output: OutputFormat) -> Result<()> {
     match cmd {
         FactorCommand::Analyze(args) => {
             let returns = load_returns_csv(&args.returns)?;
-            let factors = load_factor_data(&args.model).await?;
+            let model = fama_french::model_from_str(&args.model)
+                .ok_or_else(|| anyhow::anyhow!("unknown factor model: {}", args.model))?;
+            let factors = fama_french::load(model).await.map_err(|e| anyhow::anyhow!("{e}"))?;
             let n = returns.len().min(factors.mkt_rf.len());
             let y: Vec<f64> = returns[..n].to_vec();
-            let x = vec![
-                factors.mkt_rf[..n].to_vec(),
-                factors.smb[..n].to_vec(),
-                factors.hml[..n].to_vec(),
-            ];
-            let result = ols(&y, &x);
+            let x = factors.factor_matrix();
+            let x_trimmed: Vec<Vec<f64>> = x.into_iter().map(|col| col[..n].to_vec()).collect();
+            let result = ols(&y, &x_trimmed);
             let report = FactorReportJson {
                 alpha: result.alpha,
                 betas: result.betas,
@@ -32,9 +32,12 @@ pub async fn handle(cmd: FactorCommand, output: OutputFormat) -> Result<()> {
                     println!("metric,value");
                     println!("alpha,{}", report.alpha);
                     println!("r_squared,{}", report.r_squared);
+                    for (name, beta) in factors.factor_names().iter().zip(&report.betas) {
+                        println!("beta_{name},{beta}");
+                    }
                 }
                 OutputFormat::Table => {
-                    theme::section_header("Factor Analysis");
+                    theme::section_header(&format!("Factor Analysis ({})", args.model));
                     let mut table = vale_report::table::factor_table(&report);
                     theme::table_style(&mut table);
                     println!("{table}");
@@ -83,13 +86,4 @@ fn load_returns_csv(path: &std::path::Path) -> Result<Vec<f64>> {
 
 fn load_single_column_csv(path: &std::path::Path) -> Result<Vec<f64>> {
     load_returns_csv(path)
-}
-
-async fn load_factor_data(model: &str) -> Result<vale_factor::fama_french::FactorData> {
-    match model {
-        "ff3" | "ff5" | "carhart4" => vale_factor::fama_french::load_ff3()
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}")),
-        other => anyhow::bail!("unknown factor model: {other}"),
-    }
 }

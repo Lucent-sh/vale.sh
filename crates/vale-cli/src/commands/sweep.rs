@@ -12,7 +12,10 @@ use vale_backtest::slippage::PercentageSlippage;
 use vale_core::config::Config;
 use vale_core::types::{OutputFormat, TimeRange};
 use vale_data::build_provider;
-use vale_sweep::{cartesian_product, rank_by_metric, run_sweep, ParamRange, SweepResult};
+use vale_sweep::{
+    append_checkpoint, cartesian_product, load_checkpoint, rank_by_metric, run_sweep_with_hook,
+    save_checkpoint, ParamRange, SweepResult,
+};
 
 pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
     match cmd {
@@ -42,7 +45,26 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
                 param_ranges.push(ParamRange::parse("slow_ma:20:60:10")?);
             }
 
-            let configs = cartesian_product(&param_ranges);
+            let mut configs = cartesian_product(&param_ranges);
+            if let Some(ref ckpt) = args.checkpoint {
+                if ckpt.exists() {
+                    let done = load_checkpoint(ckpt).map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let done_keys: std::collections::HashSet<String> = done
+                        .iter()
+                        .filter_map(|r| serde_json::to_string(&r.params).ok())
+                        .collect();
+                    configs.retain(|c| {
+                        let m = strategy::params_from_grid(c);
+                        let key = serde_json::to_string(&m).unwrap_or_default();
+                        !done_keys.contains(&key)
+                    });
+                    theme::info(&format!(
+                        "Resuming sweep: {} configs remaining",
+                        configs.len()
+                    ));
+                }
+            }
+
             let total = configs.len();
             let resolved = strategy::resolve_strategy(&args.strategy, &args.ticker)?;
             let bars_arc = Arc::new(bars);
@@ -57,6 +79,20 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
             };
 
             let use_dashboard = matches!(output, OutputFormat::Table);
+            let checkpoint_path = args.checkpoint.clone();
+            let strategy_factory = {
+                let strategy_path = strategy_path.clone();
+                let ticker = ticker.clone();
+                let base_params = strategy_params.clone();
+                move |config: &[(String, f64)]| {
+                    let mut params = strategy::params_from_grid(config);
+                    for (k, v) in &base_params {
+                        params.entry(k.clone()).or_insert(*v);
+                    }
+                    strategy::build_strategy_from_map(&strategy_path, &ticker, &params)
+                        .expect("strategy params")
+                }
+            };
 
             let results: Vec<SweepResult> = if use_dashboard {
                 let (tx, rx) = mpsc::channel::<SweepResult>();
@@ -66,55 +102,46 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
                     let _ = crate::ui::sweep_dashboard::run_dashboard(rx, total, metric, top);
                 });
 
-                let base_params = strategy_params.clone();
-                let sequential: Vec<SweepResult> = configs
-                    .into_iter()
-                    .filter_map(|config| {
-                        let mut params = strategy::params_from_grid(&config);
-                        for (k, v) in &base_params {
-                            params.entry(k.clone()).or_insert(*v);
-                        }
-                        let mut strat =
-                            strategy::build_strategy_from_map(&strategy_path, &ticker, &params)
-                                .ok()?;
-                        match engine.run(strat.as_mut(), &bars_arc) {
-                            Ok(result) => {
-                                let sr = SweepResult {
-                                    params: params.into_iter().collect(),
-                                    result,
-                                };
-                                let _ = tx.send(sr.clone());
-                                Some(sr)
-                            }
-                            Err(_) => None,
-                        }
-                    })
-                    .collect();
-                drop(tx);
-                let _ = ui_handle.join();
-                sequential
-            } else {
-                let strategy_path = strategy_path.clone();
-                let ticker = ticker.clone();
-                let base_params = strategy_params.clone();
-                run_sweep(
+                let hook_tx = tx.clone();
+                let ckpt = checkpoint_path.clone();
+                let ranked = run_sweep_with_hook(
                     configs,
-                    move |config| {
-                        let mut params = strategy::params_from_grid(config);
-                        for (k, v) in &base_params {
-                            params.entry(k.clone()).or_insert(*v);
-                        }
-                        strategy::build_strategy_from_map(&strategy_path, &ticker, &params)
-                            .expect("strategy params")
-                    },
+                    strategy_factory,
                     &bars_arc,
                     &engine,
+                    Some(move |sr: &SweepResult| {
+                        let _ = hook_tx.send(sr.clone());
+                        if let Some(ref path) = ckpt {
+                            let _ = append_checkpoint(path, sr);
+                        }
+                    }),
+                );
+                drop(tx);
+                let _ = ui_handle.join();
+                ranked
+            } else {
+                let ckpt = checkpoint_path.clone();
+                run_sweep_with_hook(
+                    configs,
+                    strategy_factory,
+                    &bars_arc,
+                    &engine,
+                    ckpt.as_ref().map(|path| {
+                        let path = path.clone();
+                        move |sr: &SweepResult| {
+                            let _ = append_checkpoint(&path, sr);
+                        }
+                    }),
                 )
             };
 
             let mut ranked = results;
             rank_by_metric(&mut ranked, &args.metric);
             ranked.truncate(args.top);
+
+            if let Some(ref path) = checkpoint_path {
+                save_checkpoint(path, &ranked).ok();
+            }
 
             match output {
                 OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&ranked)?),

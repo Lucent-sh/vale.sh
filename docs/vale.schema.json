@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Lucent-sh/vale.sh/docs/vale.schema.json",
+  "title": "Vale Configuration",
+  "type": "object",
+  "properties": {
+    "core": {
+      "type": "object",
+      "properties": {
+        "default_engine": { "type": "string" },
+        "default_output": { "type": "string", "enum": ["table", "json", "csv"] },
+        "cache_dir": { "type": "string" },
+        "parallelism": { "type": "integer", "minimum": 1 },
+        "color": { "type": "boolean" }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "properties": {
+        "default": { "type": "string", "enum": ["yahoo", "polygon", "alpaca", "local"] },
+        "polygon": {
+          "type": "object",
+          "properties": { "api_key": { "type": "string" } }
+        },
+        "alpaca": {
+          "type": "object",
+          "properties": {
+            "api_key": { "type": "string" },
+            "secret_key": { "type": "string" },
+            "base_url": { "type": "string" }
+          }
+        },
+        "yahoo": {
+          "type": "object",
+          "properties": { "timeout_secs": { "type": "integer" } }
+        },
+        "local": {
+          "type": "object",
+          "properties": { "data_dir": { "type": "string" } }
+        }
+      }
+    },
+    "lean": {
+      "type": "object",
+      "properties": {
+        "executable": { "type": "string" },
+        "docker_image": { "type": "string" },
+        "python_env": { "type": "string" }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "properties": {
+        "default_var_confidence": { "type": "number" },
+        "risk_free_rate": { "type": "number" },
+        "annualization_factor": { "type": "number" }
+      }
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "default_format": { "type": "string" },
+        "html_open_browser": { "type": "boolean" },
+        "output_dir": { "type": "string" }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "theme": { "type": "string" },
+        "sparklines": { "type": "boolean" },
+        "animations": { "type": "boolean" }
+      }
+    }
+  }
+}

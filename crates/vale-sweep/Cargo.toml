@@ -1,6 +1,6 @@
 [package]
 name = "vale-sweep"
-version = "0.0.2"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
@@ -10,3 +10,4 @@ rayon = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }

@@ -86,6 +86,25 @@ impl DataProvider for PolygonProvider {
                 ))
             })?;
 
+            if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                let wait = resp
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(2);
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                continue;
+            }
+
+            if let Some(remaining) = resp.headers().get("x-ratelimit-remaining") {
+                if let Ok(s) = remaining.to_str() {
+                    if s == "0" {
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
+                }
+            }
+
             if !resp.status().is_success() {
                 return Err(ValeError::Http(format!(
                     "could not reach polygon: HTTP {}. Check your connection or run `vale doctor`.",

@@ -7,13 +7,13 @@ use vale_core::types::{OutputFormat, Resolution};
     version,
     about = "Vale — quantitative finance at terminal speed",
     long_about = None,
-    arg_required_else_help = true,
+    subcommand_required = false,
     propagate_version = true,
     styles = crate::theme::clap_styles(),
 )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 
     #[arg(global = true, short, long, default_value = "table")]
     pub output: OutputFormat,
@@ -49,6 +49,11 @@ pub enum Command {
     Doctor,
     #[command(subcommand)]
     Config(ConfigCommand),
+    /// Generate shell completions
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -120,6 +125,8 @@ pub struct SweepRunArgs {
     pub resolution: Resolution,
     #[arg(short, long, default_value = "SPY")]
     pub ticker: String,
+    #[arg(long)]
+    pub checkpoint: Option<std::path::PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -335,6 +342,7 @@ pub struct FactorIcArgs {
 pub enum ReportCommand {
     Tearsheet(ReportTearsheetArgs),
     Show(ReportShowArgs),
+    Trades(ReportTradesArgs),
 }
 
 #[derive(Args)]
@@ -352,6 +360,14 @@ pub struct ReportTearsheetArgs {
 #[derive(Args)]
 pub struct ReportShowArgs {
     pub result: std::path::PathBuf,
+}
+
+#[derive(Args)]
+pub struct ReportTradesArgs {
+    #[arg(short, long)]
+    pub input: std::path::PathBuf,
+    #[arg(short, long)]
+    pub out: Option<std::path::PathBuf>,
 }
 
 #[derive(Subcommand)]

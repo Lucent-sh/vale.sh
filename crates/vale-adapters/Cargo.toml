@@ -1,12 +1,15 @@
 [package]
 name = "vale-adapters"
-version = "0.0.2"
+version = "1.0.0"
 edition = "2021"
 
 [features]
 default = ["lean", "vectorbt"]
 lean = []
 vectorbt = []
+openbb = []
+quantlib = []
+pyo3 = ["dep:pyo3"]
 
 [dependencies]
 vale-core = { path = "../vale-core" }
@@ -18,3 +21,4 @@ tracing = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
+pyo3 = { workspace = true, optional = true }

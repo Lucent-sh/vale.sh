@@ -167,6 +167,34 @@ fn uuid_simple() -> String {
     format!("lean-{t}")
 }
 
+/// Create a minimal LEAN CLI project layout.
+pub fn scaffold_project(dir: &std::path::Path, algorithm_name: &str) -> ValeResult<()> {
+    std::fs::create_dir_all(dir)?;
+    let main_py = format!(
+        r#"from AlgorithmImports import *
+
+class {name}Algorithm(QCAlgorithm):
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1)
+        self.SetEndDate(2024, 1, 1)
+        self.SetCash(100_000)
+        self.AddEquity("SPY", Resolution.Daily)
+
+    def OnData(self, data):
+        if not self.Portfolio.Invested:
+            self.SetHoldings("SPY", 1)
+"#,
+        name = algorithm_name
+    );
+    std::fs::write(dir.join("main.py"), main_py)?;
+    std::fs::write(
+        dir.join("config.json"),
+        r#"{"algorithm-type-name": "BasicTemplateAlgorithm","algorithm-language": "Python"}"#,
+    )?;
+    std::fs::create_dir_all(dir.join("backtests"))?;
+    Ok(())
+}
+
 #[async_trait]
 impl Adapter for LeanAdapter {
     fn name(&self) -> &'static str {

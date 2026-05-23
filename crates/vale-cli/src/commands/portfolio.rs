@@ -24,11 +24,22 @@ pub async fn handle(cmd: PortfolioCommand, output: OutputFormat) -> Result<()> {
                 "min_variance" => min_variance(&returns_matrix, &tickers),
                 "max_sharpe" => max_sharpe(&returns_matrix, &tickers, args.risk_free),
                 "equal_weight" | "equal" => equal_weight(&tickers),
-                "hrp" | "risk_parity" | "black_litterman" => {
+                "hrp" | "risk_parity" => {
                     let json = serde_json::to_string(&returns_matrix_to_vec(&returns_matrix))?;
                     vale_portfolio::skfolio::optimize_via_skfolio(&args.method, &json, &tickers)
                         .await
                         .map_err(|e| anyhow::anyhow!("{e}"))?
+                }
+                "black_litterman" => {
+                    let views: HashMap<String, f64> = HashMap::new();
+                    let w = vale_portfolio::black_litterman::black_litterman(
+                        &returns_matrix,
+                        &tickers,
+                        &views,
+                        0.25,
+                        args.risk_free,
+                    );
+                    w.0.into_iter().collect()
                 }
                 other => anyhow::bail!("unknown method: {other}"),
             };
@@ -105,7 +116,14 @@ pub async fn handle(cmd: PortfolioCommand, output: OutputFormat) -> Result<()> {
                 }
             }
             if let Some(path) = args.output {
-                std::fs::write(&path, serde_json::to_string_pretty(&frontier)?)?;
+                let csv = vale_portfolio::frontier_export::compute_frontier_csv(
+                    &returns_matrix,
+                    &args.tickers,
+                    args.points,
+                    0.05,
+                );
+                std::fs::write(&path, csv)?;
+                theme::success(&format!("Wrote frontier to {}", path.display()));
             }
         }
     }

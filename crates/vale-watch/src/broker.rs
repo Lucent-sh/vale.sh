@@ -44,6 +44,7 @@ pub struct AlpacaProvider {
     api_key: String,
     secret_key: String,
     base_url: String,
+    pub demo_mode: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,11 +78,13 @@ impl AlpacaProvider {
         let client = reqwest::Client::builder()
             .build()
             .map_err(|e| ValeError::Data(e.to_string()))?;
+        let demo_mode = api_key.is_empty() || secret_key.is_empty();
         Ok(Self {
             client,
             api_key,
             secret_key,
             base_url,
+            demo_mode,
         })
     }
 
@@ -110,6 +113,9 @@ impl BrokerProvider for AlpacaProvider {
     }
 
     async fn positions(&self) -> ValeResult<Vec<Position>> {
+        if self.demo_mode {
+            return Ok(demo_positions());
+        }
         let url = format!("{}/v2/positions", self.base_url);
         let resp = self
             .client
@@ -138,6 +144,9 @@ impl BrokerProvider for AlpacaProvider {
     }
 
     async fn recent_orders(&self) -> ValeResult<Vec<OrderEvent>> {
+        if self.demo_mode {
+            return Ok(demo_orders());
+        }
         let url = format!("{}/v2/orders?status=all&limit=10", self.base_url);
         let resp = self
             .client
@@ -177,6 +186,9 @@ impl BrokerProvider for AlpacaProvider {
     }
 
     async fn account_summary(&self) -> ValeResult<AccountSummary> {
+        if self.demo_mode {
+            return Ok(demo_summary());
+        }
         let url = format!("{}/v2/account", self.base_url);
         let resp = self
             .client

@@ -145,20 +145,22 @@ async fn export(args: crate::cli::DataExportArgs) -> Result<()> {
         .fetch_ohlcv(&args.ticker, vale_core::types::Resolution::Daily, &range)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let mut out = String::from("timestamp,open,high,low,close,volume,symbol\n");
-    for b in &bars {
-        out.push_str(&format!(
-            "{},{},{},{},{},{},{}\n",
-            b.timestamp.to_rfc3339(),
-            b.open,
-            b.high,
-            b.low,
-            b.close,
-            b.volume,
-            b.symbol
-        ));
+
+    match args.format.as_str() {
+        "parquet" => {
+            vale_data::polars_export::write_parquet(&bars, &args.out)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+        }
+        _ => {
+            if args.out.extension().is_some_and(|e| e == "parquet") {
+                vale_data::polars_export::write_parquet(&bars, &args.out)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+            } else {
+                vale_data::polars_export::write_csv_polars(&bars, &args.out)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+            }
+        }
     }
-    std::fs::write(&args.out, out)?;
     theme::success(&format!("Exported to {}", args.out.display()));
     Ok(())
 }
@@ -167,6 +169,8 @@ async fn sources() -> Result<()> {
     theme::section_header("Data Sources");
     theme::status_line("yahoo", "default, no key", true);
     theme::status_line("polygon", "requires API key", false);
-    theme::status_line("local", "CSV files", true);
+    theme::status_line("alpaca", "requires API key", false);
+    theme::status_line("local", "CSV directory", true);
+    theme::status_line("openbb", "optional Python adapter", true);
     Ok(())
 }

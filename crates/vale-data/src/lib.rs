@@ -1,7 +1,9 @@
+pub mod alpaca_market;
 pub mod cache_layer;
 pub mod local;
 pub mod local_dir;
 pub mod polygon;
+pub mod polars_export;
 pub mod provider;
 pub mod yahoo;
 
@@ -26,6 +28,18 @@ pub fn build_provider(config: &Config) -> ValeResult<Box<dyn DataProvider>> {
             }
             Box::new(polygon::PolygonProvider::new(
                 config.providers.polygon.api_key.clone(),
+            )?)
+        }
+        "alpaca" => {
+            if config.providers.alpaca.api_key.is_empty() {
+                return Err(ValeError::Config(
+                    "providers.alpaca.api_key is not configured".into(),
+                ));
+            }
+            Box::new(alpaca_market::AlpacaMarketProvider::new(
+                config.providers.alpaca.api_key.clone(),
+                config.providers.alpaca.secret_key.clone(),
+                true,
             )?)
         }
         "local" => Box::new(local_dir::LocalDirProvider::new(config.local_data_dir())),

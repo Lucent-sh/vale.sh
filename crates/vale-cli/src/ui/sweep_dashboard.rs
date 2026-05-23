@@ -83,7 +83,7 @@ fn render(
         0
     };
     let bar_filled = (pct as usize).min(40);
-    let bar: String = "█".repeat(bar_filled) + &"░".repeat(40 - bar_filled);
+    let bar = format!("{}{}", "█".repeat(bar_filled), "░".repeat(40 - bar_filled));
     let progress = Paragraph::new(format!(
         " Progress  {bar}  {done}/{total}  {pct}%   (by {metric})"
     ))

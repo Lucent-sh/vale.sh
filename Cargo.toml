@@ -1,6 +1,5 @@
 [workspace]
 resolver = "2"
-repository = "https://github.com/Lucent-sh/vale.sh"
 
 members = [
     "crates/vale-cli",
@@ -60,3 +59,6 @@ strip = true
 
 [profile.dev]
 opt-level = 1
+
+[profile.bench]
+inherits = "release"
