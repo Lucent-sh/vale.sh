@@ -101,6 +101,64 @@ impl DoctorReport {
             pricing_engines,
         }
     }
+
+    /// CSV rows: category,name,available,version,message
+    pub fn to_csv(&self) -> String {
+        let mut out =
+            String::from("category,name,available,version,message\n");
+        append_status_rows(&mut out, "core", &core_rows(self));
+        append_status_rows(&mut out, "data", &self.data_providers);
+        append_status_rows(&mut out, "backtest", &self.backtest_engines);
+        append_status_rows(&mut out, "portfolio", &self.portfolio_optimizers);
+        append_status_rows(&mut out, "pricing", &self.pricing_engines);
+        out
+    }
+}
+
+fn core_rows(report: &DoctorReport) -> Vec<AdapterStatus> {
+    vec![
+        AdapterStatus {
+            name: "vale".into(),
+            available: true,
+            version: Some(report.vale_version.clone()),
+            location: None,
+            message: None,
+        },
+        AdapterStatus {
+            name: "config".into(),
+            available: report.config_path.is_some(),
+            version: None,
+            location: report.config_path.as_ref().map(|p| p.display().to_string()),
+            message: None,
+        },
+        AdapterStatus {
+            name: "cache".into(),
+            available: report.cache_size_bytes > 0,
+            version: None,
+            location: None,
+            message: Some(format!("{:.1} MB", report.cache_size_bytes as f64 / 1_000_000.0)),
+        },
+    ]
+}
+
+fn append_status_rows(out: &mut String, category: &str, rows: &[AdapterStatus]) {
+    for s in rows {
+        let ver = s.version.as_deref().unwrap_or("");
+        let msg = s.message.as_deref().unwrap_or("").replace(',', ";");
+        out.push_str(&format!(
+            "{category},{},{},{ver},{msg}\n",
+            csv_escape(&s.name),
+            s.available
+        ));
+    }
+}
+
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }
 
 async fn check_yahoo() -> AdapterStatus {
