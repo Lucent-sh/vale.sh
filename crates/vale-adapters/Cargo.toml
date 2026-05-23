@@ -4,9 +4,9 @@ version = "0.0.2"
 edition = "2021"
 
 [features]
-default = ["lean"]
+default = ["lean", "vectorbt"]
 lean = []
-vectorbt = ["pyo3"]
+vectorbt = []
 
 [dependencies]
 vale-core = { path = "../vale-core" }
@@ -18,4 +18,3 @@ tracing = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
-pyo3 = { workspace = true, optional = true }
