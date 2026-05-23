@@ -1,0 +1,8 @@
+/target/
+**/*.rs.bk
+.vale/
+vale-reports/
+*.html
+.DS_Store
+.env
+*.pem
