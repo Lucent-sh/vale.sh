@@ -1,0 +1,177 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+    paths:
+      - '**/Cargo.toml'
+      - 'crates/vale-cli/Cargo.toml'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.0.1)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      should_release: ${{ steps.ver.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(grep -E '^version[[:space:]]*=' crates/vale-cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          fi
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          SHOULD=false
+          REF="${{ github.ref }}"
+          if [[ "$REF" =~ ^refs/tags/v ]]; then
+            SHOULD=true
+          elif [[ "$REF" == "refs/heads/main" ]]; then
+            if git rev-parse "$TAG" >/dev/null 2>&1; then
+              echo "Tag ${TAG} already exists — skip release."
+            else
+              SHOULD=true
+            fi
+          fi
+          echo "should_release=${SHOULD}" >> "$GITHUB_OUTPUT"
+
+  create-tag:
+    needs: resolve-version
+    if: needs.resolve-version.outputs.should_release == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="${{ needs.resolve-version.outputs.tag }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+  build-release:
+    needs: [resolve-version, create-tag]
+    if: |
+      always() &&
+      needs.resolve-version.outputs.should_release == 'true' &&
+      (needs.create-tag.result == 'success' || needs.create-tag.result == 'skipped')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar
+            bin_name: vale
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar
+            bin_name: vale
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar
+            bin_name: vale
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            bin_name: vale.exe
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-version.outputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release -p vale-cli --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: matrix.archive == 'tar'
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          PKG="vale-${VERSION}-${TARGET}"
+          mkdir -p "dist/${PKG}"
+          cp "target/${TARGET}/release/${{ matrix.bin_name }}" "dist/${PKG}/vale"
+          chmod +x "dist/${PKG}/vale"
+          tar -czvf "dist/${PKG}.tar.gz" -C dist "${PKG}"
+          echo "ASSET_PATH=dist/${PKG}.tar.gz" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=${PKG}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          TARGET="${{ matrix.target }}"
+          PKG="vale-${VERSION}-${TARGET}"
+          mkdir -p "dist/${PKG}"
+          cp "target/${TARGET}/release/${{ matrix.bin_name }}" "dist/${PKG}/vale.exe"
+          cd dist && zip -r "${PKG}.zip" "${PKG}"
+          echo "ASSET_PATH=dist/${PKG}.zip" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=${PKG}.zip" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_PATH }}
+
+  github-release:
+    needs: [resolve-version, build-release]
+    if: needs.resolve-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-version.outputs.tag }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve-version.outputs.tag }}
+          name: Vale v${{ needs.resolve-version.outputs.version }}
+          generate_release_notes: true
+          files: dist/**
+          draft: false
+          prerelease: ${{ contains(needs.resolve-version.outputs.version, '-') || startsWith(needs.resolve-version.outputs.version, '0.0.') }}
