@@ -1,0 +1,62 @@
+[workspace]
+resolver = "2"
+repository = "https://github.com/Lucent-sh/vale.sh"
+
+members = [
+    "crates/vale-cli",
+    "crates/vale-core",
+    "crates/vale-adapters",
+    "crates/vale-backtest",
+    "crates/vale-sweep",
+    "crates/vale-data",
+    "crates/vale-indicators",
+    "crates/vale-portfolio",
+    "crates/vale-risk",
+    "crates/vale-price",
+    "crates/vale-factor",
+    "crates/vale-report",
+    "crates/vale-watch",
+]
+
+[workspace.dependencies]
+tokio = { version = "1.37", features = ["full"] }
+tokio-util = { version = "0.7" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+thiserror = "1"
+polars = { version = "0.40", features = ["lazy", "csv", "parquet", "json", "temporal"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.9"
+statrs = "0.17"
+nalgebra = "0.32"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+sled = "0.34"
+rayon = "1.10"
+clap = { version = "4", features = ["derive", "env", "color", "wrap_help"] }
+ratatui = "0.27"
+indicatif = { version = "0.17", features = ["rayon"] }
+console = "0.15"
+owo-colors = "4"
+supports-color = "3"
+comfy-table = { version = "7", features = ["crossterm"] }
+textplots = "0.8"
+crossterm = { version = "0.27", features = ["event-stream"] }
+pyo3 = { version = "0.21", features = ["auto-initialize"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+dirs = "5"
+shellexpand = "3"
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1"
+num_cpus = "1.16"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 1
