@@ -106,16 +106,16 @@ jobs:
 
       - name: Package (Windows)
         if: matrix.archive == 'zip'
-        shell: bash
+        shell: pwsh
         run: |
-          VERSION="${{ needs.plan.outputs.version }}"
-          TARGET="${{ matrix.target }}"
-          PKG="vale-${VERSION}-${TARGET}"
-          mkdir -p "dist/${PKG}"
-          cp "target/${TARGET}/release/${{ matrix.bin_name }}" "dist/${PKG}/vale.exe"
-          cd dist && zip -r "${PKG}.zip" "${PKG}"
-          echo "ASSET_PATH=dist/${PKG}.zip" >> "$GITHUB_ENV"
-          echo "ASSET_NAME=${PKG}.zip" >> "$GITHUB_ENV"
+          $VERSION = "${{ needs.plan.outputs.version }}"
+          $TARGET = "${{ matrix.target }}"
+          $PKG = "vale-$VERSION-$TARGET"
+          New-Item -ItemType Directory -Force -Path "dist/$PKG" | Out-Null
+          Copy-Item "target/$TARGET/release/${{ matrix.bin_name }}" "dist/$PKG/vale.exe"
+          Compress-Archive -Path "dist/$PKG" -DestinationPath "dist/$PKG.zip" -Force
+          echo "ASSET_PATH=dist/$PKG.zip" >> $env:GITHUB_ENV
+          echo "ASSET_NAME=$PKG.zip" >> $env:GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
