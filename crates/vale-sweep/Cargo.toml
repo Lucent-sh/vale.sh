@@ -1,0 +1,12 @@
+[package]
+name = "vale-sweep"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+vale-core = { path = "../vale-core" }
+vale-backtest = { path = "../vale-backtest" }
+rayon = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
