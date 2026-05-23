@@ -1,0 +1,13 @@
+[package]
+name = "vale-report"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+vale-core = { path = "../vale-core" }
+vale-portfolio = { path = "../vale-portfolio" }
+comfy-table = { workspace = true }
+textplots = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
