@@ -1,0 +1,16 @@
+[package]
+name = "vale-watch"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+vale-core = { path = "../vale-core" }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
