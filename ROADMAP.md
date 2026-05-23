@@ -5,7 +5,7 @@
 >
 > **Repo:** https://github.com/Lucent-sh/vale.sh  
 > **Org:** [Lucent.sh](https://github.com/Lucent-sh)  
-> **Current release target:** `v0.0.2` (alpha — P0 correctness & wiring)
+> **Current release target:** `v0.0.3` (alpha — P1 CLI completeness)
 
 Last updated: 2026-05-23
 
@@ -21,6 +21,17 @@ Last updated: 2026-05-23
 | 🔌 | Code exists, not wired to CLI |
 
 ---
+
+## v0.0.3 — Shipped (P1)
+
+- [x] P1-1 Lean engine wired (`--engine lean`)
+- [x] P1-2 VectorBT adapter + `--engine vectorbt`
+- [x] P1-3 `vale backtest validate` (lookahead / param checks)
+- [x] P1-4 Strategy JSON manifests (`strategy.json` with `strategy`, `params`)
+- [x] P1-5 Risk CVaR + `--benchmark` CSV for alpha/beta
+- [x] P1-6 CSV output for `doctor` and `backtest compare`
+- [x] P1-7 Tearsheet: monthly heatmap, trade scatter, trades table
+- [x] P1-8 Doctor uses `DoctorReport` for all output modes
 
 ## v0.0.2 — Shipped
 
@@ -59,18 +70,11 @@ Last updated: 2026-05-23
 |----|--------|
 | P0-1 … P0-9 | Shipped in v0.0.2 |
 
-### P1 — CLI completeness
+### P1 — CLI completeness (done in v0.0.3)
 
-| ID | Task | Notes |
-|----|------|-------|
-| P1-1 | `vale backtest run --engine lean` → call `LeanAdapter` | `vale-adapters/src/lean.rs`, `commands/backtest.rs` |
-| P1-2 | VectorBT adapter + `--engine vectorbt` | New `vale-adapters/src/vectorbt.rs`, feature flag |
-| P1-3 | `vale backtest validate` — real checks (lookahead, short bias hints) | `commands/backtest.rs` |
-| P1-4 | Load **custom strategy** from path / manifest (not only built-in names) | `commands/backtest.rs`, strategy registry |
-| P1-5 | Risk output: **CVaR**, optional benchmark-relative alpha/beta | `commands/risk.rs` |
-| P1-6 | `--output csv` everywhere spec requires (doctor, compare) | various `commands/*.rs` |
-| P1-7 | `vale report tearsheet` — monthly heatmap, trade scatter, trades table | `vale-report/src/html.rs` |
-| P1-8 | `DoctorReport` unify CLI + library (single code path) | `doctor.rs` in cli vs adapters |
+| ID | Status |
+|----|--------|
+| P1-1 … P1-8 | Shipped in v0.0.3 |
 
 ---
 
