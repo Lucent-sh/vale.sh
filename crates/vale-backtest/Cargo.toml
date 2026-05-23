@@ -1,0 +1,16 @@
+[package]
+name = "vale-backtest"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+vale-core = { path = "../vale-core" }
+vale-risk = { path = "../vale-risk" }
+vale-indicators = { path = "../vale-indicators" }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
