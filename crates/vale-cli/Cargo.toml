@@ -21,7 +21,7 @@ vale-risk = { path = "../vale-risk" }
 vale-price = { path = "../vale-price" }
 vale-factor = { path = "../vale-factor" }
 vale-report = { path = "../vale-report" }
-vale-adapters = { path = "../vale-adapters", features = ["lean"] }
+vale-adapters = { path = "../vale-adapters", features = ["lean", "vectorbt"] }
 vale-watch = { path = "../vale-watch" }
 tokio = { workspace = true }
 clap = { workspace = true }
@@ -44,3 +44,8 @@ rayon = { workspace = true }
 csv = "1.3"
 shellexpand = { workspace = true }
 toml = { workspace = true }
+
+[features]
+default = ["lean", "vectorbt"]
+lean = ["vale-adapters/lean"]
+vectorbt = ["vale-adapters/vectorbt"]
