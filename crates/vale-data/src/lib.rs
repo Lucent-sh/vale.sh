@@ -1,5 +1,6 @@
 pub mod cache_layer;
 pub mod local;
+pub mod local_dir;
 pub mod polygon;
 pub mod provider;
 pub mod yahoo;
@@ -27,6 +28,7 @@ pub fn build_provider(config: &Config) -> ValeResult<Box<dyn DataProvider>> {
                 config.providers.polygon.api_key.clone(),
             )?)
         }
+        "local" => Box::new(local_dir::LocalDirProvider::new(config.local_data_dir())),
         other => {
             return Err(ValeError::Data(format!("unknown data provider: {other}")));
         }

@@ -1,7 +1,11 @@
 use crate::cli::RiskCommand;
 use crate::theme;
 use anyhow::{Context, Result};
-use vale_core::types::OutputFormat;
+use chrono::{NaiveDate, TimeZone, Utc};
+use vale_core::config::Config;
+use vale_core::types::{OutputFormat, TimeRange};
+use vale_data::build_provider;
+use vale_risk::correlation::correlation_matrix;
 use vale_risk::drawdown::max_drawdown;
 use vale_risk::metrics::{
     cagr, historical_var, log_returns, sharpe_ratio, sortino_ratio, volatility_annual,
@@ -114,12 +118,95 @@ pub async fn handle(cmd: RiskCommand, output: OutputFormat) -> Result<()> {
             }
         }
         RiskCommand::Correlation(args) => {
-            theme::info(&format!(
-                "Correlation for {} tickers ({}) — fetch data first",
-                args.tickers.len(),
-                args.method
-            ));
-            let _ = args.start;
+            let config = Config::load()?;
+            let start_date = NaiveDate::parse_from_str(&args.start, "%Y-%m-%d")?;
+            let end = Utc::now();
+            let start = Utc.from_utc_datetime(&start_date.and_hms_opt(0, 0, 0).context("time")?);
+            let range = TimeRange { start, end };
+
+            let provider = build_provider(&config)?;
+            let mut series = Vec::new();
+            let mut labels = Vec::new();
+
+            for ticker in &args.tickers {
+                let bars = provider
+                    .fetch_ohlcv(ticker, vale_core::types::Resolution::Daily, &range)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{ticker}: {e}"))?;
+                let closes: Vec<f64> = bars.iter().map(|b| b.close).collect();
+                series.push(log_returns(&closes));
+                labels.push(ticker.clone());
+            }
+
+            if let Some(window) = args.rolling {
+                if args.tickers.len() == 2 {
+                    let rolling =
+                        vale_risk::correlation::rolling_correlation(&series[0], &series[1], window);
+                    match output {
+                        OutputFormat::Json => {
+                            println!("{}", serde_json::to_string_pretty(&rolling)?);
+                        }
+                        OutputFormat::Csv => {
+                            println!("rolling_correlation");
+                            for v in rolling {
+                                println!("{v}");
+                            }
+                        }
+                        OutputFormat::Table => {
+                            theme::section_header(&format!(
+                                "Rolling {} correlation (window={window})",
+                                args.method
+                            ));
+                            for (i, v) in rolling.iter().enumerate() {
+                                theme::info(&format!("t+{}: {v:.4}", i + window));
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+
+            let matrix = correlation_matrix(&series, &args.method);
+
+            match output {
+                OutputFormat::Json => {
+                    let payload = serde_json::json!({
+                        "labels": labels,
+                        "matrix": matrix,
+                        "method": args.method,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&payload)?);
+                }
+                OutputFormat::Csv => {
+                    print!(",");
+                    for label in &labels {
+                        print!("{label},");
+                    }
+                    println!();
+                    for (i, row) in matrix.iter().enumerate() {
+                        print!("{},", labels[i]);
+                        for v in row {
+                            print!("{v:.6},");
+                        }
+                        println!();
+                    }
+                }
+                OutputFormat::Table => {
+                    theme::section_header(&format!("Correlation ({})", args.method));
+                    print!("{:>8}", "");
+                    for label in &labels {
+                        print!(" {:>8}", label);
+                    }
+                    println!();
+                    for (i, row) in matrix.iter().enumerate() {
+                        print!("{:>8}", labels[i]);
+                        for v in row {
+                            print!(" {:>8.3}", v);
+                        }
+                        println!();
+                    }
+                }
+            }
         }
     }
     Ok(())

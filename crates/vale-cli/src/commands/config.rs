@@ -37,8 +37,7 @@ pub async fn handle(cmd: ConfigCommand) -> Result<()> {
 }
 
 fn config_path() -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().context("home dir")?;
-    Ok(home.join(".vale").join("config.toml"))
+    Config::global_config_path().context("home dir")
 }
 
 fn get_config_value(key: &str) -> Result<String> {
@@ -55,26 +54,45 @@ fn set_config_value(key: &str, value: &str) -> Result<()> {
     if !path.exists() {
         Config::init_global()?;
     }
-    let mut text = std::fs::read_to_string(&path)?;
-    let new_line = format!("{key} = \"{value}\"");
-    let mut lines: Vec<String> = text.lines().map(String::from).collect();
-    let mut found = false;
-    for line in &mut lines {
-        if line.starts_with(key) || line.contains(&format!(".{key}")) {
-            *line = new_line.clone();
-            found = true;
-            break;
-        }
-    }
-    if !found {
-        lines.push(new_line);
-    }
-    text = lines.join("\n");
-    if !text.ends_with('\n') {
-        text.push('\n');
-    }
-    std::fs::write(&path, text)?;
+    let text = std::fs::read_to_string(&path)?;
+    let mut root: toml::Value =
+        toml::from_str(&text).unwrap_or(toml::Value::Table(toml::map::Map::new()));
+    let parsed = parse_toml_value(value);
+    set_toml_path(&mut root, key.split('.').collect(), parsed);
+    std::fs::write(&path, toml::to_string_pretty(&root)?)?;
     Ok(())
+}
+
+fn parse_toml_value(value: &str) -> toml::Value {
+    if let Ok(v) = value.parse::<i64>() {
+        return toml::Value::Integer(v);
+    }
+    if let Ok(v) = value.parse::<f64>() {
+        return toml::Value::Float(v);
+    }
+    match value {
+        "true" => toml::Value::Boolean(true),
+        "false" => toml::Value::Boolean(false),
+        _ => toml::Value::String(value.to_string()),
+    }
+}
+
+fn set_toml_path(val: &mut toml::Value, parts: Vec<&str>, new_value: toml::Value) {
+    if parts.is_empty() {
+        *val = new_value;
+        return;
+    }
+    let table = val
+        .as_table_mut()
+        .expect("config path must point into a table");
+    if parts.len() == 1 {
+        table.insert(parts[0].to_string(), new_value);
+        return;
+    }
+    let entry = table
+        .entry(parts[0].to_string())
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    set_toml_path(entry, parts[1..].to_vec(), new_value);
 }
 
 fn lookup_toml(val: &toml::Value, key: &str) -> Option<String> {

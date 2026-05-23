@@ -54,6 +54,32 @@ fn rank(data: &[f64]) -> Vec<f64> {
     ranks
 }
 
+/// Symmetric correlation matrix for N return series (aligned to min length).
+pub fn correlation_matrix(series: &[Vec<f64>], method: &str) -> Vec<Vec<f64>> {
+    let n = series.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let len = series.iter().map(|s| s.len()).min().unwrap_or(0);
+    let trimmed: Vec<Vec<f64>> = series
+        .iter()
+        .map(|s| s[s.len().saturating_sub(len)..].to_vec())
+        .collect();
+    let mut matrix = vec![vec![0.0; n]; n];
+    for i in 0..n {
+        matrix[i][i] = 1.0;
+        for j in (i + 1)..n {
+            let c = match method {
+                "spearman" => spearman(&trimmed[i], &trimmed[j]),
+                _ => pearson(&trimmed[i], &trimmed[j]),
+            };
+            matrix[i][j] = c;
+            matrix[j][i] = c;
+        }
+    }
+    matrix
+}
+
 /// Rolling Pearson correlation with given window size.
 pub fn rolling_correlation(x: &[f64], y: &[f64], window: usize) -> Vec<f64> {
     if x.len() != y.len() || window == 0 || x.len() < window {

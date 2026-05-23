@@ -5,9 +5,9 @@
 >
 > **Repo:** https://github.com/Lucent-sh/vale.sh  
 > **Org:** [Lucent.sh](https://github.com/Lucent-sh)  
-> **Current release target:** `v0.0.1` (alpha — native research CLI)
+> **Current release target:** `v0.0.2` (alpha — P0 correctness & wiring)
 
-Last updated: 2026-05-23 (post-initial build QA)
+Last updated: 2026-05-23
 
 ---
 
@@ -22,7 +22,19 @@ Last updated: 2026-05-23 (post-initial build QA)
 
 ---
 
-## v0.0.1 — Shipped in this repo
+## v0.0.2 — Shipped
+
+- [x] P0-1 Open-position trade stats at backtest end (buy-and-hold shows 1 trade)
+- [x] P0-2 Rayon `run_sweep` in CLI (sequential only for live TUI dashboard)
+- [x] P0-3 Sweep honors `--strategy`
+- [x] P0-4 `--benchmark` on backtest (beta + benchmark curve)
+- [x] P0-5 `local` data provider + `providers.local.data_dir`
+- [x] P0-6 `vale risk correlation` (matrix + rolling for 2 tickers)
+- [x] P0-7 Single banner (root help only)
+- [x] P0-8 Config deep-merge (global + project `vale.toml`)
+- [x] P0-9 `vale config set` dotted keys
+
+## v0.0.1 — Shipped
 
 - [x] Workspace (13 library crates + `vale-cli`)
 - [x] `vale doctor`, `vale config init`
@@ -41,19 +53,11 @@ Last updated: 2026-05-23 (post-initial build QA)
 
 ## v0.1 — Next (usable daily-driver)
 
-### P0 — Correctness & wiring
+### P0 — Correctness & wiring (done in v0.0.2)
 
-| ID | Task | Files / notes |
-|----|------|----------------|
-| P0-1 | **Trade stats for open positions** — buy-and-hold shows 0 trades; record open MTM or “round-trip only” semantics | `vale-backtest/src/engine.rs` |
-| P0-2 | Wire **`vale_sweep::run_sweep`** (Rayon) in CLI instead of sequential loop | `vale-cli/src/commands/sweep.rs` |
-| P0-3 | Honor **`--strategy`** in sweep (currently always `SmaCrossover`) | `vale-cli/src/commands/sweep.rs` |
-| P0-4 | Implement **`--benchmark`** on backtest (fetch series, `benchmark_curve`, beta) | `vale-cli/src/commands/backtest.rs`, `vale-backtest` |
-| P0-5 | **`build_provider`**: support `local` CSV + `--source` override | `vale-data/src/lib.rs`, `vale-cli/src/commands/data.rs` |
-| P0-6 | **`vale risk correlation`** — fetch tickers, build return matrix, pearson/spearman/rolling | `vale-cli/src/commands/risk.rs`, `vale-risk` |
-| P0-7 | Remove double banner (`main` + `doctor`) | `vale-cli/src/main.rs`, `commands/doctor.rs` |
-| P0-8 | Config **merge** (project `vale.toml` overrides fields, not full replace) | `vale-core/src/config.rs` |
-| P0-9 | Structured **`config set`** for dotted keys (`providers.polygon.api_key`) | `vale-cli/src/commands/config.rs` |
+| ID | Status |
+|----|--------|
+| P0-1 … P0-9 | Shipped in v0.0.2 |
 
 ### P1 — CLI completeness
 
@@ -146,8 +150,8 @@ Last updated: 2026-05-23 (post-initial build QA)
 
 ## Known bugs (track until fixed)
 
-1. **Buy-and-hold:** `total_trades = 0`, `win_rate = 0`, `profit_factor = inf` while return is correct.
-2. **Sweep:** ignores CLI `--strategy` path/name.
+1. ~~**Buy-and-hold:** trade stats~~ — fixed v0.0.2 (marks open positions at end).
+2. ~~**Sweep:** ignores `--strategy`~~ — fixed v0.0.2.
 3. **Factor analyze:** CLI accepts `ff5` / `carhart4` but only loads FF3 CSV.
 4. **Watch:** empty Alpaca keys → hardcoded demo data (should be explicit in UI).
 5. **`vale` no args:** exit code `2` (clap `arg_required_else_help`) — document or add empty command.

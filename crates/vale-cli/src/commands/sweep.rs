@@ -1,4 +1,5 @@
 use crate::cli::SweepCommand;
+use crate::strategy;
 use crate::theme;
 use anyhow::{Context, Result};
 use chrono::{NaiveDate, TimeZone, Utc};
@@ -8,12 +9,10 @@ use std::thread;
 use vale_backtest::commission::PercentageCommission;
 use vale_backtest::engine::BacktestEngine;
 use vale_backtest::slippage::PercentageSlippage;
-use vale_backtest::strategies::sma_crossover::SmaCrossover;
-use vale_backtest::strategy::Strategy;
 use vale_core::config::Config;
 use vale_core::types::{OutputFormat, TimeRange};
 use vale_data::build_provider;
-use vale_sweep::{cartesian_product, rank_by_metric, ParamRange, SweepResult};
+use vale_sweep::{cartesian_product, rank_by_metric, run_sweep, ParamRange, SweepResult};
 
 pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
     match cmd {
@@ -45,22 +44,9 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
 
             let configs = cartesian_product(&param_ranges);
             let total = configs.len();
-
-            let (tx, rx) = mpsc::channel::<SweepResult>();
             let bars_arc = Arc::new(bars);
             let ticker = args.ticker.clone();
-
-            let use_dashboard = matches!(output, OutputFormat::Table);
-            let ui_handle = if use_dashboard {
-                let rx_ui = rx;
-                let metric = args.metric.clone();
-                let top = args.top;
-                Some(thread::spawn(move || {
-                    let _ = crate::ui::sweep_dashboard::run_dashboard(rx_ui, total, metric, top);
-                }))
-            } else {
-                None
-            };
+            let strategy_path = args.strategy.clone();
 
             let engine = BacktestEngine {
                 commission: Box::new(PercentageCommission { rate: 0.001 }),
@@ -68,39 +54,53 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
                 initial_cash: 100_000.0,
             };
 
-            let results: Vec<SweepResult> = configs
-                .into_iter()
-                .filter_map(|config| {
-                    let fast = config
-                        .iter()
-                        .find(|(k, _)| k == "fast_ma")
-                        .map(|(_, v)| *v as usize)
-                        .unwrap_or(10);
-                    let slow = config
-                        .iter()
-                        .find(|(k, _)| k == "slow_ma")
-                        .map(|(_, v)| *v as usize)
-                        .unwrap_or(50);
-                    let mut strat: Box<dyn Strategy> =
-                        Box::new(SmaCrossover::new(&ticker, fast, slow));
-                    match engine.run(strat.as_mut(), &bars_arc) {
-                        Ok(result) => {
-                            let sr = SweepResult {
-                                params: config.into_iter().collect(),
-                                result,
-                            };
-                            let _ = tx.send(sr.clone());
-                            Some(sr)
-                        }
-                        Err(_) => None,
-                    }
-                })
-                .collect();
-            drop(tx);
+            let use_dashboard = matches!(output, OutputFormat::Table);
 
-            if let Some(h) = ui_handle {
-                let _ = h.join();
-            }
+            let results: Vec<SweepResult> = if use_dashboard {
+                let (tx, rx) = mpsc::channel::<SweepResult>();
+                let metric = args.metric.clone();
+                let top = args.top;
+                let ui_handle = thread::spawn(move || {
+                    let _ = crate::ui::sweep_dashboard::run_dashboard(rx, total, metric, top);
+                });
+
+                let sequential: Vec<SweepResult> = configs
+                    .into_iter()
+                    .filter_map(|config| {
+                        let params = strategy::params_from_grid(&config);
+                        let mut strat =
+                            strategy::build_strategy_from_map(&strategy_path, &ticker, &params)
+                                .ok()?;
+                        match engine.run(strat.as_mut(), &bars_arc) {
+                            Ok(result) => {
+                                let sr = SweepResult {
+                                    params: params.into_iter().collect(),
+                                    result,
+                                };
+                                let _ = tx.send(sr.clone());
+                                Some(sr)
+                            }
+                            Err(_) => None,
+                        }
+                    })
+                    .collect();
+                drop(tx);
+                let _ = ui_handle.join();
+                sequential
+            } else {
+                let strategy_path = strategy_path.clone();
+                let ticker = ticker.clone();
+                run_sweep(
+                    configs,
+                    move |config| {
+                        let params = strategy::params_from_grid(config);
+                        strategy::build_strategy_from_map(&strategy_path, &ticker, &params)
+                            .expect("strategy params")
+                    },
+                    &bars_arc,
+                    &engine,
+                )
+            };
 
             let mut ranked = results;
             rank_by_metric(&mut ranked, &args.metric);

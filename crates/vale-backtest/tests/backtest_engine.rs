@@ -36,6 +36,8 @@ fn buy_and_hold_produces_positive_return() {
     let result = engine.run(&mut strategy, &bars).unwrap();
     assert!(result.total_return > 0.0);
     assert!(result.final_equity > result.initial_cash);
+    assert_eq!(result.total_trades, 1);
+    assert!(result.win_rate > 0.0);
 }
 
 #[test]

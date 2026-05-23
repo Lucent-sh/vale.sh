@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod strategy;
 mod theme;
 mod ui;
 
@@ -10,8 +11,11 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let top_level_help = args.len() <= 2 || args.get(1).is_some_and(|a| a == "--help" || a == "-h");
-    if top_level_help {
+    let show_banner = args.len() == 1
+        || args
+            .get(1)
+            .is_some_and(|a| a == "--help" || a == "-h" || a == "help");
+    if show_banner {
         theme::print_banner();
     }
 

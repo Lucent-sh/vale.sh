@@ -30,6 +30,12 @@ pub struct ProvidersConfig {
     pub polygon: PolygonConfig,
     pub alpaca: AlpacaConfig,
     pub yahoo: YahooConfig,
+    pub local: LocalConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LocalConfig {
+    pub data_dir: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -103,6 +109,9 @@ impl Default for ProvidersConfig {
                 ..Default::default()
             },
             yahoo: YahooConfig { timeout_secs: 10 },
+            local: LocalConfig {
+                data_dir: "./data".into(),
+            },
         }
     }
 }
@@ -150,33 +159,64 @@ impl Default for UiConfig {
 impl Config {
     /// Load config: global (~/.vale/config.toml) merged with project (./vale.toml).
     pub fn load() -> ValeResult<Self> {
-        let mut config = Self::default();
+        let mut base_val =
+            toml::Value::try_from(Self::default()).map_err(|e| ValeError::Config(e.to_string()))?;
 
         if let Some(home) = dirs::home_dir() {
             let global = home.join(".vale").join("config.toml");
             if global.exists() {
                 let text = std::fs::read_to_string(&global)?;
-                let parsed: Config =
+                let parsed: toml::Value =
                     toml::from_str(&text).map_err(|e| ValeError::Config(e.to_string()))?;
-                config = parsed;
+                merge_toml(&mut base_val, parsed);
             }
         }
 
         let project = PathBuf::from("vale.toml");
         if project.exists() {
             let text = std::fs::read_to_string(&project)?;
-            let parsed: Config =
+            let parsed: toml::Value =
                 toml::from_str(&text).map_err(|e| ValeError::Config(e.to_string()))?;
-            config = parsed;
+            merge_toml(&mut base_val, parsed);
         }
 
-        Ok(config)
+        base_val
+            .try_into()
+            .map_err(|e: toml::de::Error| ValeError::Config(e.to_string()))
     }
 
     pub fn cache_dir(&self) -> PathBuf {
         PathBuf::from(shellexpand::tilde(&self.core.cache_dir).to_string())
     }
 
+    pub fn local_data_dir(&self) -> PathBuf {
+        PathBuf::from(shellexpand::tilde(&self.providers.local.data_dir).to_string())
+    }
+
+    pub fn global_config_path() -> Option<PathBuf> {
+        dirs::home_dir().map(|h| h.join(".vale").join("config.toml"))
+    }
+}
+
+fn merge_toml(base: &mut toml::Value, overlay: toml::Value) {
+    match (base, overlay) {
+        (toml::Value::Table(base_tbl), toml::Value::Table(overlay_tbl)) => {
+            for (key, overlay_val) in overlay_tbl {
+                match base_tbl.get_mut(&key) {
+                    Some(existing) => merge_toml(existing, overlay_val),
+                    None => {
+                        base_tbl.insert(key, overlay_val);
+                    }
+                }
+            }
+        }
+        (base_slot, overlay_val) => {
+            *base_slot = overlay_val;
+        }
+    }
+}
+
+impl Config {
     pub fn init_global() -> ValeResult<()> {
         let home = dirs::home_dir()
             .ok_or_else(|| ValeError::Config("Cannot find home directory".into()))?;

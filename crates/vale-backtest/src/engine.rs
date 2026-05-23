@@ -108,6 +108,15 @@ impl BacktestEngine {
             strategy.on_end(&mut ctx);
         }
 
+        if let Some(last_bar) = sorted.last() {
+            Self::close_open_positions(
+                &mut portfolio,
+                &mut open_entries,
+                last_bar.timestamp,
+                last_bar.close,
+            );
+        }
+
         let start = equity_curve
             .first()
             .map(|(t, _)| *t)
@@ -185,6 +194,38 @@ impl BacktestEngine {
             trades: portfolio.trades,
             params: serde_json::json!({}),
         })
+    }
+
+    fn close_open_positions(
+        portfolio: &mut Portfolio,
+        open_entries: &mut HashMap<String, (DateTime<Utc>, f64, f64, TradeDirection)>,
+        timestamp: DateTime<Utc>,
+        exit_price: f64,
+    ) {
+        for (symbol, (entry_time, entry_price, qty, direction)) in open_entries.drain() {
+            let pnl = match direction {
+                TradeDirection::Long => (exit_price - entry_price) * qty,
+                TradeDirection::Short => (entry_price - exit_price) * qty,
+            };
+            let pnl_pct = if entry_price != 0.0 {
+                pnl / (entry_price * qty)
+            } else {
+                0.0
+            };
+            portfolio.trades.push(Trade {
+                id: Uuid::new_v4().to_string(),
+                symbol,
+                entry_time,
+                exit_time: timestamp,
+                entry_price,
+                exit_price,
+                quantity: qty,
+                direction,
+                pnl,
+                pnl_pct,
+                fees: 0.0,
+            });
+        }
     }
 
     fn apply_fill(

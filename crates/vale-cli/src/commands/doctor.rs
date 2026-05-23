@@ -20,7 +20,6 @@ pub async fn handle(output: OutputFormat) -> Result<()> {
         OutputFormat::Table => {}
     }
 
-    theme::print_banner();
     theme::section_header("Core");
     theme::status_line("vale", env!("CARGO_PKG_VERSION"), true);
 

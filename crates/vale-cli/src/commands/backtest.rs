@@ -1,18 +1,17 @@
 use crate::cli::{BacktestCommand, BacktestEngineArg, BacktestRunArgs};
+use crate::strategy;
 use crate::theme;
 use anyhow::{Context, Result};
-use chrono::{NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use indicatif::ProgressBar;
-use std::path::Path;
+use std::collections::HashMap;
 use vale_backtest::commission::PercentageCommission;
 use vale_backtest::engine::BacktestEngine;
 use vale_backtest::slippage::PercentageSlippage;
-use vale_backtest::strategies::buy_and_hold::BuyAndHold;
-use vale_backtest::strategies::sma_crossover::SmaCrossover;
-use vale_backtest::strategy::Strategy;
 use vale_core::config::Config;
-use vale_core::types::{OutputFormat, TimeRange};
+use vale_core::types::{BacktestResult, Bar, OutputFormat, TimeRange};
 use vale_data::build_provider;
+use vale_risk::metrics::{beta, log_returns};
 
 pub async fn handle(cmd: BacktestCommand, output: OutputFormat, verbose: bool) -> Result<()> {
     match cmd {
@@ -33,32 +32,62 @@ fn parse_range(start: &str, end: &str) -> Result<TimeRange> {
     })
 }
 
-fn build_strategy(
-    name: &Path,
-    ticker: &str,
-    params: &[(String, f64)],
-) -> Result<Box<dyn Strategy>> {
-    let stem = name
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("buy_and_hold");
-    match stem {
-        "buy_and_hold" => Ok(Box::new(BuyAndHold::new(ticker))),
-        "sma_crossover" => {
-            let fast = params
-                .iter()
-                .find(|(k, _)| k == "fast_ma")
-                .map(|(_, v)| *v as usize)
-                .unwrap_or(10);
-            let slow = params
-                .iter()
-                .find(|(k, _)| k == "slow_ma")
-                .map(|(_, v)| *v as usize)
-                .unwrap_or(50);
-            Ok(Box::new(SmaCrossover::new(ticker, fast, slow)))
-        }
-        other => anyhow::bail!("unknown strategy: {other}"),
+fn benchmark_equity_curve(bars: &[Bar], initial_cash: f64) -> Vec<(DateTime<Utc>, f64)> {
+    if bars.is_empty() {
+        return Vec::new();
     }
+    let first = bars[0].close;
+    if first == 0.0 {
+        return Vec::new();
+    }
+    bars.iter()
+        .map(|b| (b.timestamp, initial_cash * b.close / first))
+        .collect()
+}
+
+fn attach_benchmark(
+    mut result: BacktestResult,
+    bench_bars: &[Bar],
+    initial_cash: f64,
+) -> BacktestResult {
+    let bench_curve = benchmark_equity_curve(bench_bars, initial_cash);
+    let bench_by_day: HashMap<NaiveDate, f64> = bench_bars
+        .iter()
+        .map(|b| (b.timestamp.date_naive(), b.close))
+        .collect();
+
+    let mut asset_returns = Vec::new();
+    let mut bench_returns = Vec::new();
+    let equities: Vec<f64> = result.equity_curve.iter().map(|(_, e)| *e).collect();
+    let asset_rets = log_returns(&equities);
+
+    for (i, (ts, _)) in result.equity_curve.iter().enumerate().skip(1) {
+        if let Some(&bench_close) = bench_by_day.get(&ts.date_naive()) {
+            if let Some(prev_ts) = result.equity_curve.get(i - 1) {
+                if let Some(&prev_bench) = bench_by_day.get(&prev_ts.0.date_naive()) {
+                    if prev_bench > 0.0 && i - 1 < asset_rets.len() {
+                        asset_returns.push(asset_rets[i - 1]);
+                        bench_returns.push((bench_close / prev_bench).ln());
+                    }
+                }
+            }
+        }
+    }
+
+    let beta_val = beta(&asset_returns, &bench_returns);
+    result.benchmark_curve = Some(bench_curve);
+    if let Some(obj) = result.params.as_object_mut() {
+        obj.insert("beta".into(), serde_json::json!(beta_val));
+        if let Some(bench) = &result.benchmark_curve {
+            if let Some((_, be)) = bench.last() {
+                obj.insert(
+                    "benchmark_return".into(),
+                    serde_json::json!((be - initial_cash) / initial_cash),
+                );
+            }
+        }
+    }
+    result
 }
 
 async fn run(args: BacktestRunArgs, output: OutputFormat, _verbose: bool) -> Result<()> {
@@ -84,9 +113,9 @@ async fn run(args: BacktestRunArgs, output: OutputFormat, _verbose: bool) -> Res
         initial_cash: args.cash,
     };
 
-    let result = match args.engine {
+    let mut result = match args.engine {
         BacktestEngineArg::Native => {
-            let mut strategy = build_strategy(&args.strategy, &args.ticker, &[])?;
+            let mut strategy = strategy::build_strategy(&args.strategy, &args.ticker, &[])?;
             engine
                 .run(strategy.as_mut(), &bars)
                 .map_err(|e| anyhow::anyhow!("{e}"))?
@@ -103,6 +132,15 @@ async fn run(args: BacktestRunArgs, output: OutputFormat, _verbose: bool) -> Res
         }
     };
 
+    if let Some(bench_ticker) = &args.benchmark {
+        pb.set_message(format!("loading benchmark {bench_ticker}…"));
+        let bench_bars = provider
+            .fetch_ohlcv(bench_ticker, args.resolution, &range)
+            .await
+            .map_err(|e| anyhow::anyhow!("benchmark fetch: {e}"))?;
+        result = attach_benchmark(result, &bench_bars, args.cash);
+    }
+
     pb.finish_and_clear();
 
     if let Some(path) = &args.save {
@@ -116,6 +154,9 @@ async fn run(args: BacktestRunArgs, output: OutputFormat, _verbose: bool) -> Res
             let mut table = vale_report::table::backtest_summary(&result);
             theme::table_style(&mut table);
             println!("{table}");
+            if let Some(beta) = result.params.get("beta") {
+                theme::info(&format!("Beta vs benchmark: {beta:.4}"));
+            }
             println!();
             theme::section_header("Equity Curve");
             println!("{}", vale_report::chart::equity_curve(&result, 120, 24));
