@@ -225,6 +225,9 @@ pub struct RiskMetricsArgs {
     pub var_confidence: Vec<f64>,
     #[arg(long, default_value = "0.05")]
     pub risk_free: f64,
+    /// Benchmark equity CSV (timestamp,equity) for alpha/beta.
+    #[arg(long)]
+    pub benchmark: Option<std::path::PathBuf>,
 }
 
 #[derive(Args)]
