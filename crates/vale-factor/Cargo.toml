@@ -1,0 +1,19 @@
+[package]
+name = "vale-factor"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+vale-core = { path = "../vale-core" }
+vale-risk = { path = "../vale-risk" }
+nalgebra = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+zip = "2.2"
+
+[dev-dependencies]
+tempfile = "3.10"
