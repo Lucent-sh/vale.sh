@@ -8,7 +8,8 @@ use vale_data::build_provider;
 use vale_risk::correlation::correlation_matrix;
 use vale_risk::drawdown::max_drawdown;
 use vale_risk::metrics::{
-    cagr, historical_var, log_returns, sharpe_ratio, sortino_ratio, volatility_annual,
+    alpha, beta, cagr, cvar, historical_var, log_returns, sharpe_ratio, sortino_ratio,
+    volatility_annual,
 };
 
 pub async fn handle(cmd: RiskCommand, output: OutputFormat) -> Result<()> {
@@ -29,33 +30,64 @@ pub async fn handle(cmd: RiskCommand, output: OutputFormat) -> Result<()> {
             let rf_daily = args.risk_free / 252.0;
             let years = (equity.len() as f64 / 252.0).max(1.0);
 
-            let mut metrics: Vec<(&str, String)> = vec![
+            let mut metrics: Vec<(String, String)> = vec![
                 (
-                    "Sharpe",
+                    "Sharpe".into(),
                     format!("{:.4}", sharpe_ratio(&returns, rf_daily, ann)),
                 ),
                 (
-                    "Sortino",
+                    "Sortino".into(),
                     format!("{:.4}", sortino_ratio(&returns, rf_daily, ann)),
                 ),
-                ("CAGR", format!("{:.4}", cagr(&equity, years))),
+                ("CAGR".into(), format!("{:.4}", cagr(&equity, years))),
                 (
-                    "Volatility (Ann.)",
+                    "Volatility (Ann.)".into(),
                     format!("{:.4}", volatility_annual(&returns, ann)),
                 ),
-                ("Max Drawdown", format!("{:.4}", max_drawdown(&equity))),
+                (
+                    "Max Drawdown".into(),
+                    format!("{:.4}", max_drawdown(&equity)),
+                ),
             ];
             for &c in &args.var_confidence {
                 metrics.push((
-                    "VaR",
-                    format!("{:.4} @ {:.0}%", historical_var(&returns, c), c * 100.0),
+                    format!("VaR @ {:.0}%", c * 100.0),
+                    format!("{:.4}", historical_var(&returns, c)),
                 ));
+                metrics.push((
+                    format!("CVaR @ {:.0}%", c * 100.0),
+                    format!("{:.4}", cvar(&returns, c)),
+                ));
+            }
+
+            if let Some(bench_path) = &args.benchmark {
+                let mut bench_equity = Vec::new();
+                let mut rdr = csv::Reader::from_path(bench_path)?;
+                for result in rdr.records() {
+                    let record = result?;
+                    if record.len() >= 2 {
+                        if let Ok(e) = record[1].parse::<f64>() {
+                            bench_equity.push(e);
+                        }
+                    }
+                }
+                let bench_returns = log_returns(&bench_equity);
+                let len = returns.len().min(bench_returns.len());
+                if len > 1 {
+                    let r = &returns[returns.len() - len..];
+                    let b = &bench_returns[bench_returns.len() - len..];
+                    metrics.push(("Beta".into(), format!("{:.4}", beta(r, b))));
+                    metrics.push((
+                        "Alpha (Ann.)".into(),
+                        format!("{:.4}", alpha(r, b, rf_daily, 252.0)),
+                    ));
+                }
             }
 
             match output {
                 OutputFormat::Json => {
                     let map: std::collections::HashMap<_, _> =
-                        metrics.iter().map(|(k, v)| (*k, v.clone())).collect();
+                        metrics.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                     println!("{}", serde_json::to_string_pretty(&map)?);
                 }
                 OutputFormat::Csv => {
@@ -69,14 +101,12 @@ pub async fn handle(cmd: RiskCommand, output: OutputFormat) -> Result<()> {
                     let metrics_display: Vec<(String, String)> = metrics
                         .iter()
                         .map(|(k, v)| {
-                            (
-                                (*k).to_string(),
-                                if k == &"Sharpe" || k == &"CAGR" {
-                                    theme::colored_metric(v.parse().unwrap_or(0.0), true)
-                                } else {
-                                    v.clone()
-                                },
-                            )
+                            let colored = if k.starts_with("Sharpe") || k == "CAGR" {
+                                theme::colored_metric(v.parse().unwrap_or(0.0), true)
+                            } else {
+                                v.clone()
+                            };
+                            (k.clone(), colored)
                         })
                         .collect();
                     let metrics_refs: Vec<(&str, String)> = metrics_display
