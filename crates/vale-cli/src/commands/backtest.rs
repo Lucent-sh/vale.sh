@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use indicatif::ProgressBar;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use vale_backtest::commission::PercentageCommission;
 use vale_backtest::engine::BacktestEngine;
 use vale_backtest::slippage::PercentageSlippage;
@@ -12,6 +13,11 @@ use vale_core::config::Config;
 use vale_core::types::{BacktestResult, Bar, OutputFormat, TimeRange};
 use vale_data::build_provider;
 use vale_risk::metrics::{beta, log_returns};
+
+#[cfg(feature = "lean")]
+use vale_adapters::lean::LeanAdapter;
+#[cfg(feature = "vectorbt")]
+use vale_adapters::vectorbt::VectorBtAdapter;
 
 pub async fn handle(cmd: BacktestCommand, output: OutputFormat, verbose: bool) -> Result<()> {
     match cmd {
@@ -30,6 +36,19 @@ fn parse_range(start: &str, end: &str) -> Result<TimeRange> {
         start: Utc.from_utc_datetime(&start_date.and_hms_opt(0, 0, 0).context("time")?),
         end: Utc.from_utc_datetime(&end_date.and_hms_opt(23, 59, 59).context("time")?),
     })
+}
+
+fn resolve_lean_project(strategy: &Path) -> PathBuf {
+    if strategy.is_dir() {
+        strategy.to_path_buf()
+    } else if strategy.is_file() {
+        strategy
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    }
 }
 
 fn benchmark_equity_curve(bars: &[Bar], initial_cash: f64) -> Vec<(DateTime<Utc>, f64)> {
@@ -93,15 +112,16 @@ fn attach_benchmark(
 async fn run(args: BacktestRunArgs, output: OutputFormat, _verbose: bool) -> Result<()> {
     let config = Config::load()?;
     let range = parse_range(&args.start, &args.end)?;
+    let resolved = strategy::resolve_strategy(&args.strategy, &args.ticker)?;
 
     let pb = ProgressBar::new_spinner();
     pb.set_style(theme::spinner_style());
-    pb.set_message(format!("loading data for {}…", args.ticker));
+    pb.set_message(format!("loading data for {}…", resolved.ticker));
     pb.enable_steady_tick(std::time::Duration::from_millis(80));
 
     let provider = build_provider(&config)?;
     let bars = provider
-        .fetch_ohlcv(&args.ticker, args.resolution, &range)
+        .fetch_ohlcv(&resolved.ticker, args.resolution, &range)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -115,20 +135,59 @@ async fn run(args: BacktestRunArgs, output: OutputFormat, _verbose: bool) -> Res
 
     let mut result = match args.engine {
         BacktestEngineArg::Native => {
-            let mut strategy = strategy::build_strategy(&args.strategy, &args.ticker, &[])?;
+            let mut strategy = strategy::build_resolved(&resolved)?;
             engine
                 .run(strategy.as_mut(), &bars)
                 .map_err(|e| anyhow::anyhow!("{e}"))?
         }
         BacktestEngineArg::Lean => {
-            anyhow::bail!(
-                "lean is not installed. Run `vale doctor` to see installation instructions."
-            );
+            #[cfg(feature = "lean")]
+            {
+                let exe = LeanAdapter::detect_executable(&config.lean.executable).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "lean is not installed. Run `vale doctor` to see installation instructions."
+                    )
+                })?;
+                let project = resolve_lean_project(&args.strategy);
+                let adapter = LeanAdapter::new(exe, project);
+                adapter.run_backtest().map_err(|e| anyhow::anyhow!("{e}"))?
+            }
+            #[cfg(not(feature = "lean"))]
+            {
+                anyhow::bail!("lean engine not enabled in this build");
+            }
         }
         BacktestEngineArg::Vectorbt => {
-            anyhow::bail!(
-                "vectorbt is not installed. Run `vale doctor` to see installation instructions."
-            );
+            #[cfg(feature = "vectorbt")]
+            {
+                let python = VectorBtAdapter::detect_python().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "vectorbt is not installed. Run `vale doctor` to see installation instructions."
+                    )
+                })?;
+                let stem = resolved
+                    .builtin
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("sma_crossover");
+                let params: serde_json::Value = resolved
+                    .params
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::json!(v)))
+                    .collect();
+                VectorBtAdapter::new(python).run_backtest(
+                    &resolved.ticker,
+                    &args.start,
+                    &args.end,
+                    stem,
+                    &params,
+                    args.cash,
+                )?
+            }
+            #[cfg(not(feature = "vectorbt"))]
+            {
+                anyhow::bail!("vectorbt engine not enabled in this build");
+            }
         }
     };
 
@@ -176,7 +235,21 @@ async fn compare(args: crate::cli::BacktestCompareArgs, output: OutputFormat) ->
     }
     match output {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&results)?),
-        OutputFormat::Csv => anyhow::bail!("use JSON for compare"),
+        OutputFormat::Csv => {
+            println!("name,total_return,cagr,sharpe,max_drawdown,win_rate,trades");
+            for (name, r) in &results {
+                println!(
+                    "{},{},{},{},{},{},{}",
+                    csv_escape(name),
+                    r.total_return,
+                    r.cagr,
+                    r.sharpe_ratio,
+                    r.max_drawdown,
+                    r.win_rate,
+                    r.total_trades
+                );
+            }
+        }
         OutputFormat::Table => {
             theme::section_header("Backtest Comparison");
             for (name, r) in &results {
@@ -190,10 +263,36 @@ async fn compare(args: crate::cli::BacktestCompareArgs, output: OutputFormat) ->
     Ok(())
 }
 
-async fn validate(args: crate::cli::BacktestValidateArgs) -> Result<()> {
-    if !args.strategy.exists() {
-        theme::warning("strategy file not found — checking built-in name only");
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
     }
-    theme::success("Strategy validation passed (no look-ahead bias detected in scaffold)");
+}
+
+async fn validate(args: crate::cli::BacktestValidateArgs) -> Result<()> {
+    let findings = strategy::validate_strategy(&args.strategy)?;
+    if findings.is_empty() {
+        theme::success("Strategy validation passed (no issues found)");
+        return Ok(());
+    }
+
+    theme::section_header("Strategy Validation");
+    let mut errors = 0usize;
+    for f in &findings {
+        match f.level {
+            "error" => {
+                theme::error(&f.message);
+                errors += 1;
+            }
+            _ => theme::warning(&f.message),
+        }
+    }
+
+    if errors > 0 {
+        anyhow::bail!("{errors} validation error(s)");
+    }
+    theme::success("Strategy validation passed with warnings");
     Ok(())
 }
