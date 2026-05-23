@@ -1,0 +1,9 @@
+[package]
+name = "vale-price"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+statrs = { workspace = true }
+serde = { workspace = true }
+vale-core = { path = "../vale-core" }
