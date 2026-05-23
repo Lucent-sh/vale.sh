@@ -44,9 +44,11 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
 
             let configs = cartesian_product(&param_ranges);
             let total = configs.len();
+            let resolved = strategy::resolve_strategy(&args.strategy, &args.ticker)?;
             let bars_arc = Arc::new(bars);
-            let ticker = args.ticker.clone();
-            let strategy_path = args.strategy.clone();
+            let ticker = resolved.ticker.clone();
+            let strategy_path = resolved.builtin.clone();
+            let strategy_params = resolved.params.clone();
 
             let engine = BacktestEngine {
                 commission: Box::new(PercentageCommission { rate: 0.001 }),
@@ -64,10 +66,14 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
                     let _ = crate::ui::sweep_dashboard::run_dashboard(rx, total, metric, top);
                 });
 
+                let base_params = strategy_params.clone();
                 let sequential: Vec<SweepResult> = configs
                     .into_iter()
                     .filter_map(|config| {
-                        let params = strategy::params_from_grid(&config);
+                        let mut params = strategy::params_from_grid(&config);
+                        for (k, v) in &base_params {
+                            params.entry(k.clone()).or_insert(*v);
+                        }
                         let mut strat =
                             strategy::build_strategy_from_map(&strategy_path, &ticker, &params)
                                 .ok()?;
@@ -90,10 +96,14 @@ pub async fn handle(cmd: SweepCommand, output: OutputFormat) -> Result<()> {
             } else {
                 let strategy_path = strategy_path.clone();
                 let ticker = ticker.clone();
+                let base_params = strategy_params.clone();
                 run_sweep(
                     configs,
                     move |config| {
-                        let params = strategy::params_from_grid(config);
+                        let mut params = strategy::params_from_grid(config);
+                        for (k, v) in &base_params {
+                            params.entry(k.clone()).or_insert(*v);
+                        }
                         strategy::build_strategy_from_map(&strategy_path, &ticker, &params)
                             .expect("strategy params")
                     },
