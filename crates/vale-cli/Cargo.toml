@@ -1,0 +1,46 @@
+[package]
+name = "vale-cli"
+version = "0.0.1"
+edition = "2021"
+description = "Vale.sh — quantitative finance at terminal speed"
+repository = "https://github.com/Lucent-sh/vale.sh"
+license = "MIT"
+default-run = "vale"
+
+[[bin]]
+name = "vale"
+path = "src/main.rs"
+
+[dependencies]
+vale-core = { path = "../vale-core" }
+vale-data = { path = "../vale-data" }
+vale-backtest = { path = "../vale-backtest" }
+vale-sweep = { path = "../vale-sweep" }
+vale-portfolio = { path = "../vale-portfolio" }
+vale-risk = { path = "../vale-risk" }
+vale-price = { path = "../vale-price" }
+vale-factor = { path = "../vale-factor" }
+vale-report = { path = "../vale-report" }
+vale-adapters = { path = "../vale-adapters", features = ["lean"] }
+vale-watch = { path = "../vale-watch" }
+tokio = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+indicatif = { workspace = true }
+console = { workspace = true }
+owo-colors = { workspace = true }
+supports-color = { workspace = true }
+comfy-table = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+nalgebra = { workspace = true }
+rayon = { workspace = true }
+csv = "1.3"
+shellexpand = { workspace = true }
+toml = { workspace = true }
